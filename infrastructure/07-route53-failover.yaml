@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Capstone 6 - Route 53 failover routing: primary record -> ALB (health checked),
+  secondary record -> S3-hosted static "sorry, we're down" page.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: capstone6
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID for your domain
+  RecordName:
+    Type: String
+    Description: Fully qualified record name, e.g. shop.example.com
+
+Resources:
+  ErrorPageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvName}-failover-error-page-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  ErrorPageBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ErrorPageBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${ErrorPageBucket.Arn}/*"
+
+  ALBHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTP
+        FullyQualifiedDomainName:
+          Fn::ImportValue: !Sub "${EnvName}-alb-dns"
+        Port: 80
+        ResourcePath: /health
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - { Key: Name, Value: !Sub "${EnvName}-alb-health" }
+
+  PrimaryRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref RecordName
+      Type: A
+      SetIdentifier: primary
+      Failover: PRIMARY
+      HealthCheckId: !Ref ALBHealthCheck
+      AliasTarget:
+        DNSName:
+          Fn::ImportValue: !Sub "${EnvName}-alb-dns"
+        HostedZoneId: Z35SXDOTRQ7X7K # us-east-1 ALB canonical hosted zone; change per region
+        EvaluateTargetHealth: true
+
+  SecondaryRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref RecordName
+      Type: A
+      SetIdentifier: secondary
+      Failover: SECONDARY
+      AliasTarget:
+        DNSName: !GetAtt ErrorPageBucket.WebsiteURL
+        HostedZoneId: Z3AQBSTGFYJSTF # us-east-1 S3 website hosted zone; change per region
+        EvaluateTargetHealth: false
+
+Outputs:
+  HealthCheckId:
+    Value: !Ref ALBHealthCheck
+  ErrorPageBucketWebsiteURL:
+    Value: !GetAtt ErrorPageBucket.WebsiteURL

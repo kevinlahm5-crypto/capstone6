@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Capstone 6 - ECS Fargate cluster, ALB spanning two AZs, and ECR repos for
+  the web and worker images.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: capstone6
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${EnvName}-cluster"
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  WebRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${EnvName}-web"
+
+  WorkerRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${EnvName}-worker"
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from internet to ALB
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvName}-vpc-id"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${EnvName}-alb"
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups: [!Ref ALBSecurityGroup]
+      Subnets:
+        - Fn::ImportValue: !Sub "${EnvName}-public-subnet-a"
+        - Fn::ImportValue: !Sub "${EnvName}-public-subnet-b"
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${EnvName}-web-tg"
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvName}-vpc-id"
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+Outputs:
+  ClusterName:
+    Value: !Ref ECSCluster
+    Export: { Name: !Sub "${EnvName}-cluster-name" }
+  WebRepoUri:
+    Value: !GetAtt WebRepo.RepositoryUri
+    Export: { Name: !Sub "${EnvName}-web-repo-uri" }
+  WorkerRepoUri:
+    Value: !GetAtt WorkerRepo.RepositoryUri
+    Export: { Name: !Sub "${EnvName}-worker-repo-uri" }
+  ALBArn:
+    Value: !Ref ALB
+    Export: { Name: !Sub "${EnvName}-alb-arn" }
+  ALBSecurityGroupId:
+    Value: !Ref ALBSecurityGroup
+    Export: { Name: !Sub "${EnvName}-alb-sg-id" }
+  ALBListenerArn:
+    Value: !Ref ALBListener
+    Export: { Name: !Sub "${EnvName}-alb-listener-arn" }
+  ALBDNSName:
+    Value: !GetAtt ALB.DNSName
+    Export: { Name: !Sub "${EnvName}-alb-dns" }
+  WebTargetGroupArn:
+    Value: !Ref WebTargetGroup
+    Export: { Name: !Sub "${EnvName}-web-tg-arn" }
+  ALBFullName:
+    Value: !GetAtt ALB.LoadBalancerFullName
+    Export: { Name: !Sub "${EnvName}-alb-fullname" }
+  WebTargetGroupFullName:
+    Value: !GetAtt WebTargetGroup.TargetGroupFullName
+    Export: { Name: !Sub "${EnvName}-web-tg-fullname" }

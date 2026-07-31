@@ -1,0 +1,32 @@
+{
+  "family": "capstone6-web",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "<TASK_EXECUTION_ROLE_ARN>",
+  "taskRoleArn": "<TASK_ROLE_ARN>",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "IMAGE1_NAME",
+      "portMappings": [{ "containerPort": 3000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "PORT", "value": "3000" },
+        { "name": "DB_HOST", "value": "<DB_ENDPOINT>" },
+        { "name": "DB_USER", "value": "admin" },
+        { "name": "DB_PASSWORD", "value": "<DB_PASSWORD_FROM_SECRETS_MANAGER>" },
+        { "name": "REDIS_HOST", "value": "<REDIS_ENDPOINT>" },
+        { "name": "SQS_QUEUE_URL", "value": "<SQS_QUEUE_URL>" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/capstone6-web",
+          "awslogs-region": "<AWS_REGION>",
+          "awslogs-stream-prefix": "web"
+        }
+      }
+    }
+  ]
+}

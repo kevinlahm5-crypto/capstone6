@@ -1,0 +1,13 @@
+{
+  "name": "capstone6-worker",
+  "version": "1.0.0",
+  "description": "SQS order-processing worker for Capstone 6",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.629.0",
+    "mysql2": "^3.11.0"
+  }
+}

@@ -1,0 +1,305 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Capstone 6 - ECS Fargate services for the web app (scales on ALB request
+  count) and the SQS worker (scales on queue depth per task).
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: capstone6
+  WebImage:
+    Type: String
+    Description: Full ECR image URI:tag for the web container
+  WorkerImage:
+    Type: String
+    Description: Full ECR image URI:tag for the worker container
+  DBPassword:
+    Type: String
+    NoEcho: true
+
+Resources:
+  LogGroupWeb:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${EnvName}-web"
+      RetentionInDays: 14
+
+  LogGroupWorker:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${EnvName}-worker"
+      RetentionInDays: 14
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  WebTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SendToOrderQueue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [sqs:SendMessage, sqs:GetQueueAttributes]
+                Resource:
+                  Fn::ImportValue: !Sub "${EnvName}-order-queue-arn"
+
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeOrderQueue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes]
+                Resource:
+                  Fn::ImportValue: !Sub "${EnvName}-order-queue-arn"
+
+  AppTasksSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS tasks (web + worker) - egress only, ingress from ALB on web port
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvName}-vpc-id"
+
+  AppTasksIngressFromALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AppTasksSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3000
+      ToPort: 3000
+      SourceSecurityGroupId:
+        Fn::ImportValue: !Sub "${EnvName}-alb-sg-id"
+
+  AppTasksToDB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Fn::ImportValue: !Sub "${EnvName}-db-sg-id"
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref AppTasksSecurityGroup
+
+  AppTasksToCache:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Fn::ImportValue: !Sub "${EnvName}-cache-sg-id"
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref AppTasksSecurityGroup
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${EnvName}-web"
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt WebTaskRole.Arn
+      ContainerDefinitions:
+        - Name: web
+          Image: !Ref WebImage
+          PortMappings: [{ ContainerPort: 3000, Protocol: tcp }]
+          Environment:
+            - { Name: PORT, Value: "3000" }
+            - { Name: DB_HOST, Value: { Fn::ImportValue: !Sub "${EnvName}-db-endpoint" } }
+            - { Name: DB_USER, Value: admin }
+            - { Name: DB_PASSWORD, Value: !Ref DBPassword }
+            - { Name: REDIS_HOST, Value: { Fn::ImportValue: !Sub "${EnvName}-redis-endpoint" } }
+            - { Name: SQS_QUEUE_URL, Value: { Fn::ImportValue: !Sub "${EnvName}-order-queue-url" } }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupWeb
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: web
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${EnvName}-worker"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt WorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Ref WorkerImage
+          Environment:
+            - { Name: DB_HOST, Value: { Fn::ImportValue: !Sub "${EnvName}-db-endpoint" } }
+            - { Name: DB_USER, Value: admin }
+            - { Name: DB_PASSWORD, Value: !Ref DBPassword }
+            - { Name: SQS_QUEUE_URL, Value: { Fn::ImportValue: !Sub "${EnvName}-order-queue-url" } }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupWorker
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: worker
+
+  WebService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${EnvName}-web-svc"
+      Cluster:
+        Fn::ImportValue: !Sub "${EnvName}-cluster-name"
+      TaskDefinition: !Ref WebTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      DeploymentController:
+        Type: CODE_DEPLOY # blue/green via CodeDeploy, see pipeline/appspec.yml
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub "${EnvName}-private-subnet-a"
+            - Fn::ImportValue: !Sub "${EnvName}-private-subnet-b"
+          SecurityGroups: [!Ref AppTasksSecurityGroup]
+      LoadBalancers:
+        - ContainerName: web
+          ContainerPort: 3000
+          TargetGroupArn:
+            Fn::ImportValue: !Sub "${EnvName}-web-tg-arn"
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${EnvName}-worker-svc"
+      Cluster:
+        Fn::ImportValue: !Sub "${EnvName}-cluster-name"
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub "${EnvName}-private-subnet-a"
+            - Fn::ImportValue: !Sub "${EnvName}-private-subnet-b"
+          SecurityGroups: [!Ref AppTasksSecurityGroup]
+
+  # --- Auto Scaling: Web on ALB requests per target ---
+  WebScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: WebService
+    Properties:
+      ServiceNamespace: ecs
+      ResourceId: !Sub
+        - service/${ClusterName}/${EnvName}-web-svc
+        - { ClusterName: { Fn::ImportValue: !Sub "${EnvName}-cluster-name" } }
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 2
+      MaxCapacity: 10
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+
+  WebScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${EnvName}-web-scale-alb-requests"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WebScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 500
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel:
+            Fn::Sub:
+              - "${ALBFullName}/${TGFullName}"
+              - ALBFullName: { Fn::ImportValue: !Sub "${EnvName}-alb-fullname" }
+                TGFullName: { Fn::ImportValue: !Sub "${EnvName}-web-tg-fullname" }
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 30
+
+  # --- Auto Scaling: Worker on SQS queue depth per task ---
+  WorkerScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: WorkerService
+    Properties:
+      ServiceNamespace: ecs
+      ResourceId: !Sub
+        - service/${ClusterName}/${EnvName}-worker-svc
+        - { ClusterName: { Fn::ImportValue: !Sub "${EnvName}-cluster-name" } }
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: 10
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+
+  WorkerScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${EnvName}-worker-scale-queue-depth"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WorkerScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 10 # target ~10 visible messages per running worker task
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 30
+        CustomizedMetricSpecification:
+          Metrics:
+            - Id: m1
+              Label: MessagesVisible
+              MetricStat:
+                Metric:
+                  Namespace: AWS/SQS
+                  MetricName: ApproximateNumberOfMessagesVisible
+                  Dimensions:
+                    - Name: QueueName
+                      Value:
+                        Fn::ImportValue: !Sub "${EnvName}-order-queue-name"
+                Stat: Average
+              ReturnData: false
+            - Id: m2
+              Label: RunningTaskCount
+              MetricStat:
+                Metric:
+                  Namespace: ECS/ContainerInsights
+                  MetricName: RunningTaskCount
+                  Dimensions:
+                    - Name: ClusterName
+                      Value: { Fn::ImportValue: !Sub "${EnvName}-cluster-name" }
+                    - Name: ServiceName
+                      Value: !Sub "${EnvName}-worker-svc"
+                Stat: Average
+              ReturnData: false
+            - Id: e1
+              Label: MessagesPerTask
+              Expression: "IF(m2 == 0, m1, m1 / m2)"
+              ReturnData: true
+
+Outputs:
+  WebServiceName:
+    Value: !GetAtt WebService.Name
+  WorkerServiceName:
+    Value: !GetAtt WorkerService.Name

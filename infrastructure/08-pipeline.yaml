@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Capstone 6 - Serverless CI/CD: CodePipeline (Source -> Build -> Deploy) using
+  CodeBuild to build/push Docker images to ECR and CodeDeploy for ECS blue/green.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: capstone6
+  GitHubOwner:
+    Type: String
+  GitHubRepo:
+    Type: String
+  GitHubBranch:
+    Type: String
+    Default: main
+  CodeStarConnectionArn:
+    Type: String
+    Description: ARN of the CodeStar Connections connection to GitHub (create once via console/CLI)
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvName}-pipeline-artifacts-${AWS::AccountId}"
+      VersioningConfiguration: { Status: Enabled }
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  [
+                    ecr:GetAuthorizationToken,
+                    ecr:BatchCheckLayerAvailability,
+                    ecr:GetDownloadUrlForLayer,
+                    ecr:BatchGetImage,
+                    ecr:PutImage,
+                    ecr:InitiateLayerUpload,
+                    ecr:UploadLayerPart,
+                    ecr:CompleteLayerUpload,
+                  ]
+                Resource: "*"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketAcl, s3:GetBucketLocation]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+
+  WebBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${EnvName}-web-build"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true # required to build Docker images
+        EnvironmentVariables:
+          - { Name: IMAGE_REPO_NAME, Value: !Sub "${EnvName}-web" }
+          - { Name: AWS_ACCOUNT_ID, Value: !Ref "AWS::AccountId" }
+          - { Name: CONTAINER_NAME, Value: web }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: pipeline/buildspec-web.yml
+
+  WorkerBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${EnvName}-worker-build"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - { Name: IMAGE_REPO_NAME, Value: !Sub "${EnvName}-worker" }
+          - { Name: AWS_ACCOUNT_ID, Value: !Ref "AWS::AccountId" }
+          - { Name: CONTAINER_NAME, Value: worker }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: pipeline/buildspec-worker.yml
+
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub "${EnvName}-web-app"
+      ComputePlatform: ECS
+
+  CodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codedeploy.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
+  CodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployApplication
+      DeploymentGroupName: !Sub "${EnvName}-web-dg"
+      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+      DeploymentStyle:
+        DeploymentType: BLUE_GREEN
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      BlueGreenDeploymentConfiguration:
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+      ECSServices:
+        - ServiceName: !Sub "${EnvName}-web-svc"
+          ClusterName:
+            Fn::ImportValue: !Sub "${EnvName}-cluster-name"
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - ProdTrafficRoute:
+              ListenerArns:
+                - Fn::ImportValue: !Sub "${EnvName}-alb-listener-arn"
+            TargetGroups:
+              - Name: !Sub "${EnvName}-web-tg"
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codepipeline.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PipelineAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketVersioning]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Resource: "*"
+              - Effect: Allow
+                Action: [codedeploy:*]
+                Resource: "*"
+              - Effect: Allow
+                Action: [codestar-connections:UseConnection]
+                Resource: !Ref CodeStarConnectionArn
+              - Effect: Allow
+                Action: [ecs:DescribeServices, ecs:DescribeTaskDefinition, ecs:RegisterTaskDefinition]
+                Resource: "*"
+              - Effect: Allow
+                Action: [iam:PassRole]
+                Resource: "*"
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${EnvName}-pipeline"
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore: { Type: S3, Location: !Ref ArtifactBucket }
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                { Category: Source, Owner: AWS, Provider: CodeStarSourceConnection, Version: "1" }
+              Configuration:
+                ConnectionArn: !Ref CodeStarConnectionArn
+                FullRepositoryId: !Sub "${GitHubOwner}/${GitHubRepo}"
+                BranchName: !Ref GitHubBranch
+              OutputArtifacts: [{ Name: SourceOutput }]
+
+        - Name: Build
+          Actions:
+            - Name: BuildWeb
+              ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: "1" }
+              InputArtifacts: [{ Name: SourceOutput }]
+              OutputArtifacts: [{ Name: WebBuildOutput }]
+              Configuration: { ProjectName: !Ref WebBuildProject }
+            - Name: BuildWorker
+              ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: "1" }
+              InputArtifacts: [{ Name: SourceOutput }]
+              OutputArtifacts: [{ Name: WorkerBuildOutput }]
+              Configuration: { ProjectName: !Ref WorkerBuildProject }
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployWeb
+              ActionTypeId: { Category: Deploy, Owner: AWS, Provider: CodeDeployToECS, Version: "1" }
+              InputArtifacts: [{ Name: SourceOutput }, { Name: WebBuildOutput }]
+              Configuration:
+                ApplicationName: !Ref CodeDeployApplication
+                DeploymentGroupName: !Ref CodeDeployDeploymentGroup
+                TaskDefinitionTemplateArtifact: SourceOutput
+                TaskDefinitionTemplatePath: pipeline/taskdef-web.json
+                AppSpecTemplateArtifact: SourceOutput
+                AppSpecTemplatePath: pipeline/appspec.yml
+                Image1ArtifactName: WebBuildOutput
+                Image1ContainerName: IMAGE1_NAME
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

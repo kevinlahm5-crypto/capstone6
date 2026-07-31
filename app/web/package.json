@@ -1,0 +1,15 @@
+{
+  "name": "capstone6-web",
+  "version": "1.0.0",
+  "description": "Sample e-commerce web frontend for Capstone 6",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "mysql2": "^3.11.0",
+    "@aws-sdk/client-sqs": "^3.629.0"
+  }
+}

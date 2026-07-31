@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Capstone 6 - SQS queue for async order processing, with a dead-letter queue.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: capstone6
+
+Resources:
+  OrderDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${EnvName}-orders-dlq"
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  OrderQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${EnvName}-orders"
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OrderDLQ.Arn
+        maxReceiveCount: 5
+
+Outputs:
+  QueueUrl:
+    Value: !Ref OrderQueue
+    Export: { Name: !Sub "${EnvName}-order-queue-url" }
+  QueueArn:
+    Value: !GetAtt OrderQueue.Arn
+    Export: { Name: !Sub "${EnvName}-order-queue-arn" }
+  QueueName:
+    Value: !GetAtt OrderQueue.QueueName
+    Export: { Name: !Sub "${EnvName}-order-queue-name" }
