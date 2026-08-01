@@ -178,8 +178,6 @@ Resources:
       TaskDefinition: !Ref WebTaskDefinition
       DesiredCount: 2
       LaunchType: FARGATE
-      DeploymentController:
-        Type: CODE_DEPLOY # blue/green via CodeDeploy, see pipeline/appspec.yml
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED

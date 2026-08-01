@@ -16,9 +16,9 @@ phases:
       - echo Pushing web image to ECR...
       - docker push $REPO_URI:$IMAGE_TAG
       - docker push $REPO_URI:latest
-      - printf '{"IMAGE1_NAME":"%s"}' "$REPO_URI:$IMAGE_TAG" > imageDetail.json
-      - cat imageDetail.json
+      - printf '[{"name":"web","imageUri":"%s"}]' "$REPO_URI:$IMAGE_TAG" > imagedefinitions.json
+      - cat imagedefinitions.json
 
 artifacts:
   files:
-    - imageDetail.json
+    - imagedefinitions.json
