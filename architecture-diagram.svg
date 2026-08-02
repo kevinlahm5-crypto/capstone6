@@ -1,0 +1,172 @@
+<svg viewBox="0 0 1600 1120" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a5568"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1120" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="800" y="36" text-anchor="middle" font-size="24" font-weight="700" fill="#1e293b">Capstone 6 — Resilient Container Platform &amp; CI/CD</text>
+  <text x="800" y="58" text-anchor="middle" font-size="13" fill="#64748b">ECS Fargate · RDS Multi-AZ · ElastiCache · SQS · CodePipeline · Route 53 Failover · AWS Backup</text>
+
+  <!-- CI/CD pipeline row -->
+  <text x="40" y="92" font-size="13" font-weight="700" fill="#c2410c">CI/CD PIPELINE</text>
+  <g font-size="12" fill="#7c2d12">
+    <rect x="40" y="100" width="150" height="56" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+    <text x="115" y="124" text-anchor="middle" font-weight="600">GitHub</text>
+    <text x="115" y="140" text-anchor="middle" font-size="10">Source (App Connection)</text>
+
+    <rect x="220" y="100" width="170" height="56" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+    <text x="305" y="124" text-anchor="middle" font-weight="600">CodePipeline</text>
+    <text x="305" y="140" text-anchor="middle" font-size="10">capstone6-pipeline</text>
+
+    <rect x="420" y="100" width="180" height="56" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+    <text x="510" y="120" text-anchor="middle" font-weight="600">CodeBuild</text>
+    <text x="510" y="135" text-anchor="middle" font-size="10">BuildWeb + BuildWorker</text>
+    <text x="510" y="148" text-anchor="middle" font-size="9" fill="#9a3412">docker build/push, imagedefinitions.json</text>
+
+    <rect x="630" y="100" width="140" height="56" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+    <text x="700" y="124" text-anchor="middle" font-weight="600">ECR</text>
+    <text x="700" y="140" text-anchor="middle" font-size="10">web + worker repos</text>
+
+    <rect x="800" y="100" width="200" height="56" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+    <text x="900" y="120" text-anchor="middle" font-weight="600">ECS Deploy Action</text>
+    <text x="900" y="136" text-anchor="middle" font-size="10">DeployWeb + DeployWorker</text>
+    <text x="900" y="148" text-anchor="middle" font-size="9" fill="#9a3412">rolling update (ECS controller)</text>
+  </g>
+  <line x1="190" y1="128" x2="218" y2="128" stroke="#c2410c" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="390" y1="128" x2="418" y2="128" stroke="#c2410c" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="600" y1="128" x2="628" y2="128" stroke="#c2410c" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="770" y1="128" x2="798" y2="128" stroke="#c2410c" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="900" y1="156" x2="900" y2="200" stroke="#c2410c" stroke-width="2" marker-end="url(#arrowOrange)" stroke-dasharray="4,3"/>
+
+  <!-- Route 53 -->
+  <text x="1240" y="92" font-size="13" font-weight="700" fill="#0f766e">DNS FAILOVER</text>
+  <rect x="1220" y="100" width="340" height="56" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="1390" y="122" text-anchor="middle" font-weight="600" fill="#0f766e">Route 53 — Failover Routing</text>
+  <text x="1390" y="138" text-anchor="middle" font-size="10" fill="#134e4a">Primary record + health check → Secondary record</text>
+  <line x1="1390" y1="156" x2="1390" y2="200" stroke="#0f766e" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- VPC box -->
+  <rect x="40" y="200" width="1520" height="880" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="60" y="228" font-size="14" font-weight="700" fill="#1d4ed8">VPC — capstone6 (us-east-1)</text>
+
+  <!-- ALB spanning both AZs -->
+  <rect x="560" y="240" width="480" height="50" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="800" y="262" text-anchor="middle" font-weight="600" fill="#1e3a8a">Application Load Balancer</text>
+  <text x="800" y="278" text-anchor="middle" font-size="10" fill="#1e3a8a">public subnets, spans AZ-a / AZ-b</text>
+
+  <!-- AZ A column -->
+  <rect x="80" y="310" width="700" height="740" rx="10" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="100" y="332" font-size="13" font-weight="700" fill="#334155">Availability Zone A</text>
+
+  <!-- AZ B column -->
+  <rect x="820" y="310" width="700" height="740" rx="10" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="840" y="332" font-size="13" font-weight="700" fill="#334155">Availability Zone B</text>
+
+  <!-- Public subnets -->
+  <rect x="110" y="350" width="640" height="70" rx="8" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="130" y="372" font-size="11" font-weight="600" fill="#334155">Public Subnet A</text>
+  <rect x="130" y="382" width="150" height="28" rx="6" fill="#e2e8f0" stroke="#64748b"/>
+  <text x="205" y="401" text-anchor="middle" font-size="10">NAT Gateway A</text>
+
+  <rect x="850" y="350" width="640" height="70" rx="8" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="870" y="372" font-size="11" font-weight="600" fill="#334155">Public Subnet B</text>
+  <rect x="870" y="382" width="150" height="28" rx="6" fill="#e2e8f0" stroke="#64748b"/>
+  <text x="945" y="401" text-anchor="middle" font-size="10">NAT Gateway B</text>
+
+  <!-- Private subnets -->
+  <rect x="110" y="436" width="640" height="590" rx="8" fill="#fefce8" stroke="#a16207"/>
+  <text x="130" y="458" font-size="11" font-weight="600" fill="#713f12">Private Subnet A</text>
+
+  <rect x="850" y="436" width="640" height="590" rx="8" fill="#fefce8" stroke="#a16207"/>
+  <text x="870" y="458" font-size="11" font-weight="600" fill="#713f12">Private Subnet B</text>
+
+  <!-- ECS Web tasks -->
+  <rect x="140" y="475" width="260" height="60" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+  <text x="270" y="497" text-anchor="middle" font-weight="600" fill="#7c2d12">ECS Fargate — web task</text>
+  <text x="270" y="512" text-anchor="middle" font-size="9" fill="#9a3412">port 3000, DesiredCount 2 (scales 2-10)</text>
+  <text x="270" y="525" text-anchor="middle" font-size="9" fill="#9a3412">scales on ALBRequestCountPerTarget</text>
+
+  <rect x="880" y="475" width="260" height="60" rx="8" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+  <text x="1010" y="497" text-anchor="middle" font-weight="600" fill="#7c2d12">ECS Fargate — web task</text>
+  <text x="1010" y="512" text-anchor="middle" font-size="9" fill="#9a3412">port 3000, DesiredCount 2 (scales 2-10)</text>
+  <text x="1010" y="525" text-anchor="middle" font-size="9" fill="#9a3412">scales on ALBRequestCountPerTarget</text>
+
+  <!-- ECS Worker tasks -->
+  <rect x="140" y="555" width="260" height="60" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="1.5"/>
+  <text x="270" y="577" text-anchor="middle" font-weight="600" fill="#7f1d1d">ECS Fargate — worker task</text>
+  <text x="270" y="592" text-anchor="middle" font-size="9" fill="#991b1b">long-polls SQS, DesiredCount 1 (scales 1-10)</text>
+  <text x="270" y="605" text-anchor="middle" font-size="9" fill="#991b1b">scales on messages-visible / task</text>
+
+  <rect x="880" y="555" width="260" height="60" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="1.5"/>
+  <text x="1010" y="577" text-anchor="middle" font-weight="600" fill="#7f1d1d">ECS Fargate — worker task</text>
+  <text x="1010" y="592" text-anchor="middle" font-size="9" fill="#991b1b">long-polls SQS, DesiredCount 1 (scales 1-10)</text>
+  <text x="1010" y="605" text-anchor="middle" font-size="9" fill="#991b1b">scales on messages-visible / task</text>
+
+  <!-- SQS in the middle -->
+  <rect x="620" y="560" width="200" height="60" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="720" y="584" text-anchor="middle" font-weight="600" fill="#5b21b6">SQS Order Queue</text>
+  <text x="720" y="600" text-anchor="middle" font-size="9" fill="#5b21b6">+ Dead Letter Queue (DLQ)</text>
+
+  <line x1="400" y1="505" x2="618" y2="580" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+  <line x1="880" y1="505" x2="822" y2="580" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+  <line x1="618" y1="595" x2="400" y2="580" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+  <line x1="822" y1="595" x2="880" y2="580" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+
+  <!-- ALB to web tasks -->
+  <line x1="700" y1="290" x2="270" y2="473" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="900" y1="290" x2="1010" y2="473" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- RDS -->
+  <rect x="140" y="650" width="260" height="55" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="270" y="671" text-anchor="middle" font-weight="600" fill="#065f46">RDS — Primary</text>
+  <text x="270" y="686" text-anchor="middle" font-size="9" fill="#047857">Multi-AZ synchronous replica</text>
+
+  <rect x="880" y="650" width="260" height="55" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="1010" y="671" text-anchor="middle" font-weight="600" fill="#065f46">RDS — Standby</text>
+  <text x="1010" y="686" text-anchor="middle" font-size="9" fill="#047857">automatic failover target</text>
+
+  <line x1="400" y1="677" x2="880" y2="677" stroke="#059669" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="640" y="670" text-anchor="middle" font-size="9" fill="#047857">sync replication</text>
+
+  <!-- ElastiCache -->
+  <rect x="140" y="720" width="260" height="55" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="270" y="741" text-anchor="middle" font-weight="600" fill="#155e75">ElastiCache (Redis)</text>
+  <text x="270" y="756" text-anchor="middle" font-size="9" fill="#0e7490">cached reads for web tasks</text>
+
+  <rect x="880" y="720" width="260" height="55" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="1010" y="741" text-anchor="middle" font-weight="600" fill="#155e75">ElastiCache (Redis)</text>
+  <text x="1010" y="756" text-anchor="middle" font-size="9" fill="#0e7490">cached reads for web tasks</text>
+
+  <!-- AWS Backup -->
+  <rect x="640" y="830" width="320" height="60" rx="10" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.5"/>
+  <text x="800" y="854" text-anchor="middle" font-weight="600" fill="#86198f">AWS Backup Plan</text>
+  <text x="800" y="870" text-anchor="middle" font-size="9" fill="#86198f">automated scheduled snapshots of RDS</text>
+  <line x1="700" y1="830" x2="330" y2="705" stroke="#a21caf" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <line x1="900" y1="830" x2="1010" y2="705" stroke="#a21caf" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+  <!-- Legend -->
+  <g font-size="10" fill="#334155">
+    <rect x="80" y="960" width="14" height="14" fill="#fff7ed" stroke="#c2410c"/>
+    <text x="100" y="971">Compute / CI-CD (ECS, CodePipeline, CodeBuild, ECR)</text>
+    <rect x="80" y="984" width="14" height="14" fill="#ecfdf5" stroke="#059669"/>
+    <text x="100" y="995">Data (RDS Multi-AZ)</text>
+    <rect x="80" y="1008" width="14" height="14" fill="#ecfeff" stroke="#0891b2"/>
+    <text x="100" y="1019">Cache (ElastiCache)</text>
+    <rect x="440" y="960" width="14" height="14" fill="#f5f3ff" stroke="#7c3aed"/>
+    <text x="460" y="971">Async decoupling (SQS + DLQ)</text>
+    <rect x="440" y="984" width="14" height="14" fill="#fdf4ff" stroke="#a21caf"/>
+    <text x="460" y="995">Disaster recovery (AWS Backup)</text>
+    <rect x="440" y="1008" width="14" height="14" fill="#f0fdfa" stroke="#0f766e"/>
+    <text x="460" y="1019">DNS failover (Route 53)</text>
+  </g>
+</svg>

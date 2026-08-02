@@ -1,10 +1,8 @@
 # Capstone 6 — Resilient Container Platform & CI/CD
 
-A containerized e-commerce platform on **ECS Fargate**, spanning two Availability
-Zones, with RDS Multi-AZ + ElastiCache for data/caching, SQS-decoupled async
-order processing that autoscales workers on queue depth, AWS Backup + Route 53
-failover for disaster recovery, and a serverless CodePipeline/CodeBuild CI/CD
-pipeline that builds Docker images and rolls out blue/green ECS deployments.
+A containerized e-commerce platform on **ECS Fargate**, spanning two Availability Zones, with **RDS Multi-AZ + ElastiCache** for data/caching, **SQS-decoupled** async order processing that autoscales workers on queue depth, **AWS Backup + Route 53 failover** for disaster recovery, and a serverless **CodePipeline/CodeBuild** CI/CD pipeline that builds Docker images and rolls out **rolling ECS deployments** to the web and worker services.
+
+> Note: `pipeline/appspec.yml` and `pipeline/taskdef-web.json` are scaffolding for a future CodeDeploy blue/green cutover and are not currently wired into the pipeline — the deployed pipeline uses CodePipeline's native ECS rolling-update deploy action (see `infrastructure/08-pipeline.yaml`, `DeployWeb`/`DeployWorker` actions).
 
 ## Repository layout
 
@@ -14,21 +12,18 @@ app/web/        Frontend web service (Node/Express) — cached reads via Redis,
 app/worker/     Backend worker — long-polls SQS, processes orders
 pipeline/       buildspec-web.yml, buildspec-worker.yml, appspec.yml, taskdef-web.json
 infrastructure/ CloudFormation templates, deployed in numeric order
+evidence/       Screenshots documenting the deployed, working system
 ```
 
 ## Architecture diagram
 
-> _Insert your diagram here_ (draw.io / Lucidchart / AWS-icon PNG). It should show:
-> the VPC with 2 AZs (public subnets with ALB/NAT, private subnets with
-> ECS/RDS/ElastiCache), the SQS decoupling between the web and worker services,
-> the CodePipeline → CodeBuild → ECR → CodeDeploy/ECS flow, and the Route 53
-> primary/secondary failover targets.
+![Architecture diagram](architecture-diagram.svg)
+
+VPC across two AZs — public subnets host the ALB and NAT Gateways, private subnets host ECS (web + worker), RDS Multi-AZ, and ElastiCache. The web service publishes orders to SQS; the worker long-polls the queue and autoscales on queue depth per task. CodePipeline builds and deploys both services via CodeBuild → ECR → ECS rolling update. Route 53 health-checks the ALB and fails over to a secondary target if it goes unhealthy. AWS Backup takes scheduled RDS snapshots.
 
 ## Deployment order
 
-All templates live in `infrastructure/` and are numbered in the order they must
-be deployed, because later stacks import outputs from earlier ones via
-`Fn::ImportValue`.
+All templates live in `infrastructure/` and are numbered in the order they must be deployed, because later stacks import outputs from earlier ones via `Fn::ImportValue`.
 
 ```bash
 export ENV=capstone6
@@ -108,30 +103,46 @@ aws cloudformation deploy \
   --region $REGION
 ```
 
-## Evidence to capture for grading
+## Evidence
 
-- [ ] **Architecture diagram** — embed above.
-- [ ] **CI/CD proof** — screenshot of a green CodePipeline execution
-      (`aws codepipeline get-pipeline-state --name ${ENV}-pipeline`).
-- [ ] **Scaling proof** — CloudWatch screenshot of `ECS RunningTaskCount` or
-      `SQS ApproximateNumberOfMessagesVisible` rising then the worker service
-      task count scaling out in response. Generate load with:
-      `for i in {1..500}; do curl -s -X POST $ALB_DNS/orders -d '{"items":["x"]}' -H 'Content-Type: application/json' & done`
-- [ ] **DR runbook & failover proof** — screenshot of the AWS Backup plan +
-      a completed backup job, plus a description of a simulated failure
-      (e.g., stop the ALB targets or force an RDS failover with
-      `aws rds reboot-db-instance --db-instance-identifier ${ENV}-db --force-failover`)
-      and a screenshot/log showing Route 53 shifted traffic to the secondary record.
+### 1. Highly available infrastructure
+
+| Evidence | What it shows |
+|---|---|
+| ![RDS Multi-AZ](evidence/rds-multizone.png) | RDS deployed Multi-AZ |
+| ![ALB](evidence/ec2-load-balancer.png) | Application Load Balancer spanning both AZs |
+| ![Target groups](evidence/ec2TargetGroups.png) | ALB target groups with healthy targets in both AZs |
+| ![SQS](evidence/sqs-Messages.png) | SQS queue decoupling web → worker |
+| ![Databases](evidence/databases.png) / ![Recent events](evidence/databases-recent-events.png) | RDS instance status and event history |
+
+### 2. CI/CD pipeline & scaling
+
+| Evidence | What it shows |
+|---|---|
+| ![Pipeline stages](evidence/codepipeline.png) | CodePipeline: Source → Build → Deploy, all green |
+| ![Pipeline built](evidence/codepipepilnebuilt.png) | CodeBuild stage detail (web + worker images) |
+| ![ECS deployment](evidence/ecsDeployment.png) | ECS service updated with the newly built image |
+
+Target-tracking auto scaling is configured in `infrastructure/05-ecs-services.yaml`:
+- **Web service** scales 2–10 tasks on `ALBRequestCountPerTarget` (target: 500 req/target)
+- **Worker service** scales 1–10 tasks on a custom metric (`ApproximateNumberOfMessagesVisible` ÷ `RunningTaskCount`, target: ~10 messages/task)
+
+> Scaling-under-load proof (CloudWatch screenshot of task count or queue depth rising during a load test) — *not yet captured; infrastructure was torn down after functional testing to avoid ongoing AWS charges. To reproduce: redeploy per the steps above, then run the load generator below and screenshot the CloudWatch metric.*
+> ```bash
+> for i in {1..500}; do curl -s -X POST $ALB_DNS/orders -d '{"items":["x"]}' -H 'Content-Type: application/json' & done
+> ```
+
+### 3. Disaster recovery & failover
+
+| Evidence | What it shows |
+|---|---|
+| ![AWS Backup jobs](evidence/awsbackup-jobs.png) | AWS Backup plan with completed automated snapshot jobs |
+| ![Route 53 hosted zones](evidence/route53-HostedZones.png) | Route 53 hosted zone configuration |
+| ![Route 53 health checks](evidence/route53-healthchecks.png) / ![Route 53 health checks 2](evidence/route53-healthchecks-2.png) | Health checks driving primary/secondary failover routing |
 
 ## Notes / things to double check before submitting
 
-- `05-ecs-services.yaml` and `08-pipeline.yaml` both import the ALB security
-  group ID and listener ARN from `04-ecs-cluster.yaml`'s outputs
-  (`${EnvName}-alb-sg-id`, `${EnvName}-alb-listener-arn`) — so stack 4 must be
-  deployed before stacks 5 and 8.
-- Secrets (`DBPassword`) are passed as CloudFormation parameters here for
-  simplicity; for production/graded rigor, move them to AWS Secrets Manager
-  and reference via `secrets:` in the task definition instead of plaintext
-  `environment:`.
-- Route 53 hosted-zone alias `HostedZoneId` values in `07-route53-failover.yaml`
-  are for `us-east-1`; update if deploying elsewhere.
+- `05-ecs-services.yaml` and `08-pipeline.yaml` both import the ALB security group ID and listener ARN from `04-ecs-cluster.yaml`'s outputs (`${EnvName}-alb-sg-id`, `${EnvName}-alb-listener-arn`) — so stack 4 must be deployed before stacks 5 and 8.
+- Secrets (`DBPassword`) are passed as CloudFormation parameters here for simplicity; for production/graded rigor, move them to AWS Secrets Manager and reference via `secrets:` in the task definition instead of plaintext `environment:`.
+- Route 53 hosted-zone alias `HostedZoneId` values in `07-route53-failover.yaml` are for `us-east-1`; update if deploying elsewhere.
+- The `capstone6-pipeline` and `capstone6-backup` CloudFormation stacks are in `DELETE_FAILED` state (non-empty S3 artifact bucket / Backup vault blocked automatic deletion during teardown) — does not incur meaningful ongoing cost, but should be cleaned up (empty the bucket / clear recovery points, then retry delete) before considering the environment fully torn down.
